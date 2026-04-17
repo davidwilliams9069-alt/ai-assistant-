@@ -1,30 +1,44 @@
-import Groq from "groq-sdk";
-import { kv } from "@vercel/kv";
+// File path: api/chat.js
+// This is a Vercel Serverless Function. It runs on the backend.
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import Groq from 'groq-sdk';
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+    // Security: Only allow POST requests
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' });
+    }
 
-  const { message, userId = "browser_user" } = req.body;
+    // Security: Read the API key from Vercel Environment Variables (Never hardcode here)
+    const apiKey = process.env.GROQ_API_KEY;
+    
+    if (!apiKey) {
+        console.error('GROQ_API_KEY is not set in environment variables.');
+        return res.status(500).json({ error: 'Server configuration error: API key missing.' });
+    }
 
-  const raw = (await kv.lrange(`chat:${userId}`, 0, 9)) || [];
-  const history = raw.map(m => JSON.parse(m)).reverse();
+    const groq = new Groq({ apiKey });
 
-  const completion = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [
-      { role: "system", content: "You are a helpful personal AI assistant. Be concise." },
-      ...history,
-      { role: "user", content: message },
-    ],
-  });
+    try {
+        const { messages } = req.body;
 
-  const reply = completion.choices[0].message.content;
+        const chatCompletion = await groq.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a helpful, professional AI assistant. Format your responses using Markdown when helpful (tables, lists, bold). Keep responses clear and concise."
+                },
+                ...messages
+            ],
+            model: "llama3-70b-8192", // Free, fast, and powerful on Groq
+            temperature: 0.7,
+            max_tokens: 4096,
+        });
 
-  await kv.lpush(`chat:${userId}`, JSON.stringify({ role: "user", content: message }));
-  await kv.lpush(`chat:${userId}`, JSON.stringify({ role: "assistant", content: reply }));
-  await kv.ltrim(`chat:${userId}`, 0, 19);
+        res.status(200).json({ reply: chatCompletion.choices[0].message.content });
 
-  res.json({ reply });
+    } catch (error) {
+        console.error('Groq API Error:', error);
+        res.status(500).json({ error: 'Failed to fetch response from AI. Please try again.' });
+    }
 }
