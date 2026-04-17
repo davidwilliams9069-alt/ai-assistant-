@@ -1,89 +1,311 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My AI Assistant</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #f9f9f9; }
-    h2 { margin-bottom: 16px; font-weight: 600; }
-    #chat { height: 60vh; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; margin-bottom: 12px; background: white; }
-    .msg { margin: 8px 0; padding: 10px 14px; border-radius: 18px; max-width: 80%; line-height: 1.5; font-size: 15px; }
-    .user { background: #0084ff; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
-    .bot  { background: #f0f0f0; color: #111; border-bottom-left-radius: 4px; }
-    #controls { display: flex; gap: 8px; }
-    #input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 24px; font-size: 15px; outline: none; }
-    button { padding: 10px 18px; border-radius: 24px; border: none; background: #0084ff; color: white; cursor: pointer; font-size: 14px; }
-    #mic { background: #eee; color: #333; }
-    #mic.listening { background: #ff3b30; color: white; }
-    .thinking { color: #999; font-style: italic; font-size: 14px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>Private AI Assistant | Groq + Voice</title>
+    
+    <!-- Tailwind CSS for professional, mobile-responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Markdown rendering library (clean and safe) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        /* Custom scrollbar for cleaner look */
+        #chat-container::-webkit-scrollbar { width: 6px; }
+        #chat-container::-webkit-scrollbar-track { background: #1f2937; }
+        #chat-container::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        .prose :where(code):not(:where([class~="not-prose"] *))::before,
+        .prose :where(code):not(:where([class~="not-prose"] *))::after { content: ""; }
+    </style>
 </head>
-<body>
-  <h2>🤖 My AI Assistant</h2>
-  <div id="chat"></div>
-  <div id="controls">
-    <input id="input" placeholder="Type a message or press 🎤…" />
-    <button id="mic" onclick="toggleVoice()">🎤</button>
-    <button onclick="sendMessage()">Send</button>
-  </div>
+<body class="bg-gray-950 text-gray-100 h-screen flex flex-col antialiased">
 
-  <script>
-    const chat = document.getElementById('chat');
-    const input = document.getElementById('input');
-    let recognition, listening = false;
+    <!-- Header: Clean and minimal -->
+    <header class="border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm sticky top-0 z-10 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+            <div class="h-3 w-3 bg-emerald-500 rounded-full animate-pulse"></div>
+            <h1 class="font-semibold text-lg tracking-tight">Private AI <span class="text-emerald-400 text-sm font-mono ml-1">Llama 3 70B</span></h1>
+        </div>
+        <div class="text-xs text-gray-400 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
+            🔒 End-to-End Encrypted
+        </div>
+    </header>
 
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+    <!-- Main Chat Area -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-6" id="chat-container">
+        <!-- Welcome Message -->
+        <div class="flex flex-col items-start space-y-4 max-w-3xl mx-auto w-full">
+            <div class="bg-gray-800/60 rounded-2xl p-5 border border-gray-700/50 w-full">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="bg-emerald-900/30 p-2 rounded-full border border-emerald-800/50">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <span class="font-medium text-gray-300">Assistant</span>
+                </div>
+                <div class="prose prose-invert prose-sm max-w-none text-gray-300">
+                    <p>Hello! I'm your private AI assistant. I run on Groq's ultra-fast inference engine. How can I help you today?</p>
+                    <p><span class="text-xs bg-gray-700 px-2 py-0.5 rounded">💡 Tip: Click the 🎤 mic button to speak your message.</span></p>
+                </div>
+            </div>
+        </div>
+        <!-- Dynamic messages will be appended here -->
+        <div id="messages-wrapper" class="flex flex-col space-y-6 max-w-3xl mx-auto w-full mt-6"></div>
+        
+        <!-- Thinking Indicator (Hidden by default) -->
+        <div id="thinking-indicator" class="flex max-w-3xl mx-auto w-full mt-4 hidden">
+            <div class="bg-gray-800/60 rounded-2xl p-4 border border-gray-700/50 flex items-center space-x-3">
+                <div class="flex space-x-1">
+                    <div class="h-2 w-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div class="h-2 w-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                    <div class="h-2 w-2 bg-gray-500 rounded-full animate-bounce"></div>
+                </div>
+                <span class="text-sm text-gray-400">AI is thinking...</span>
+            </div>
+        </div>
+    </main>
 
-    async function sendMessage() {
-      const text = input.value.trim();
-      if (!text) return;
-      addMsg(text, 'user');
-      input.value = '';
-      const thinking = addMsg('Thinking…', 'bot thinking');
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text })
-        });
-        const { reply } = await res.json();
-        thinking.textContent = reply;
-        thinking.classList.remove('thinking');
-        speak(reply);
-      } catch {
-        thinking.textContent = 'Error — please try again.';
-      }
-    }
+    <!-- Input Area -->
+    <footer class="border-t border-gray-800 bg-gray-900 p-4 sticky bottom-0">
+        <div class="max-w-3xl mx-auto flex items-end gap-2 md:gap-3">
+            <!-- Voice Button -->
+            <button id="voice-btn" type="button" class="flex-shrink-0 h-12 w-12 rounded-full bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-emerald-400 transition-colors flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </button>
+            
+            <!-- Text Input -->
+            <div class="flex-1 relative">
+                <textarea 
+                    id="user-input" 
+                    rows="1" 
+                    placeholder="Type your message..." 
+                    class="w-full resize-none bg-gray-800 border border-gray-700 rounded-2xl py-3 px-4 pr-12 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent max-h-32 overflow-y-auto"
+                    style="min-height: 48px;"
+                ></textarea>
+                <button id="send-btn" class="absolute right-2 bottom-2 p-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 disabled:pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                </button>
+            </div>
+        </div>
+        <p class="text-center text-xs text-gray-500 mt-2 max-w-3xl mx-auto">Responses generated by AI. May occasionally produce inaccurate information.</p>
+    </footer>
 
-    function addMsg(text, cls) {
-      const div = document.createElement('div');
-      div.className = `msg ${cls}`;
-      div.textContent = text;
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-      return div;
-    }
+    <script>
+        (function() {
+            "use strict";
 
-    function speak(text) {
-      const utt = new SpeechSynthesisUtterance(text);
-      utt.rate = 1.05;
-      speechSynthesis.speak(utt);
-    }
+            // DOM Elements
+            const chatWrapper = document.getElementById('messages-wrapper');
+            const chatContainer = document.getElementById('chat-container');
+            const userInput = document.getElementById('user-input');
+            const sendBtn = document.getElementById('send-btn');
+            const voiceBtn = document.getElementById('voice-btn');
+            const thinkingIndicator = document.getElementById('thinking-indicator');
 
-    function toggleVoice() {
-      const mic = document.getElementById('mic');
-      if (listening) { recognition?.stop(); return; }
-      recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.lang = 'en-US';
-      recognition.onresult = e => { input.value = e.results[0][0].transcript; sendMessage(); };
-      recognition.onend = () => { listening = false; mic.classList.remove('listening'); mic.textContent = '🎤'; };
-      recognition.start();
-      listening = true;
-      mic.classList.add('listening');
-      mic.textContent = '⏹ Stop';
-    }
-  </script>
+            // State
+            let conversationHistory = [];
+            let isWaitingForResponse = false;
+
+            // Configure Marked.js for safe rendering
+            marked.setOptions({
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false
+            });
+
+            // Helper: Auto-resize textarea
+            userInput.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = (this.scrollHeight) + 'px';
+                if (this.value.trim() === '') this.style.height = '48px';
+            });
+
+            // Helper: Scroll to bottom
+            function scrollToBottom() {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            // Helper: Add message to UI
+            function addMessageToUI(role, content) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `flex flex-col items-${role === 'user' ? 'end' : 'start'} w-full`;
+                
+                const bubbleDiv = document.createElement('div');
+                const isUser = role === 'user';
+                
+                bubbleDiv.className = `max-w-[85%] md:max-w-[75%] rounded-2xl p-4 ${
+                    isUser 
+                        ? 'bg-emerald-600/90 text-white border border-emerald-500' 
+                        : 'bg-gray-800/60 text-gray-200 border border-gray-700/50'
+                }`;
+
+                // Render Markdown for assistant, plain text for user
+                if (isUser) {
+                    const p = document.createElement('p');
+                    p.className = 'whitespace-pre-wrap break-words';
+                    p.textContent = content;
+                    bubbleDiv.appendChild(p);
+                } else {
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'prose prose-invert prose-sm max-w-none';
+                    contentDiv.innerHTML = marked.parse(content);
+                    bubbleDiv.appendChild(contentDiv);
+                }
+
+                // Add small label
+                const labelDiv = document.createElement('div');
+                labelDiv.className = `text-xs text-gray-500 mt-1 px-2 ${isUser ? 'text-right' : 'text-left'}`;
+                labelDiv.textContent = isUser ? 'You' : 'Assistant';
+                
+                messageDiv.appendChild(bubbleDiv);
+                messageDiv.appendChild(labelDiv);
+                chatWrapper.appendChild(messageDiv);
+                
+                scrollToBottom();
+            }
+
+            // Core Function: Send message to our secure backend API
+            async function sendMessageToAI(userMessage) {
+                if (isWaitingForResponse) return;
+                
+                // Add user message to UI and history
+                addMessageToUI('user', userMessage);
+                conversationHistory.push({ role: 'user', content: userMessage });
+                
+                // Clear input and reset height
+                userInput.value = '';
+                userInput.style.height = '48px';
+                
+                // Show thinking indicator
+                isWaitingForResponse = true;
+                thinkingIndicator.classList.remove('hidden');
+                sendBtn.disabled = true;
+                scrollToBottom();
+
+                try {
+                    // Call Vercel Serverless Function (api/chat.js)
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ messages: conversationHistory }),
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Network response was not ok');
+                    }
+
+                    const aiReply = data.reply;
+                    
+                    // Add AI response to UI and history
+                    addMessageToUI('assistant', aiReply);
+                    conversationHistory.push({ role: 'assistant', content: aiReply });
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    const errorMsg = `❌ Error: ${error.message || 'Could not connect to AI. Please try again.'}`;
+                    addMessageToUI('assistant', errorMsg);
+                } finally {
+                    // Hide thinking indicator and re-enable
+                    thinkingIndicator.classList.add('hidden');
+                    isWaitingForResponse = false;
+                    sendBtn.disabled = false;
+                    userInput.focus();
+                }
+            }
+
+            // Event Handlers
+            function handleSend() {
+                const message = userInput.value.trim();
+                if (!message || isWaitingForResponse) return;
+                sendMessageToAI(message);
+            }
+
+            sendBtn.addEventListener('click', handleSend);
+            
+            userInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                }
+            });
+
+            // ================= VOICE TO TEXT (Web Speech API) =================
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (SpeechRecognition) {
+                const recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.lang = 'en-US';
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                let isListening = false;
+
+                voiceBtn.addEventListener('click', () => {
+                    if (isListening) {
+                        recognition.stop();
+                        voiceBtn.classList.remove('text-red-400', 'bg-gray-700');
+                        voiceBtn.classList.add('text-gray-300');
+                        isListening = false;
+                        return;
+                    }
+
+                    try {
+                        recognition.start();
+                        isListening = true;
+                        voiceBtn.classList.remove('text-gray-300');
+                        voiceBtn.classList.add('text-red-400', 'bg-gray-700', 'animate-pulse');
+                        
+                        // Visual feedback in input
+                        userInput.placeholder = '🎤 Listening... Speak clearly.';
+                        
+                    } catch (error) {
+                        console.error('Speech recognition error:', error);
+                        alert('Could not start microphone. Please ensure you have granted permission.');
+                    }
+                });
+
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    userInput.value = transcript;
+                    userInput.style.height = 'auto';
+                    userInput.style.height = (userInput.scrollHeight) + 'px';
+                    userInput.focus();
+                    
+                    // Optional: Auto-send after voice input? We'll just populate the box for you to review.
+                };
+
+                recognition.onerror = (event) => {
+                    console.error('Speech error:', event.error);
+                    alert(`Microphone error: ${event.error}. Please check permissions.`);
+                    resetVoiceButton();
+                };
+
+                recognition.onend = () => {
+                    resetVoiceButton();
+                };
+
+                function resetVoiceButton() {
+                    isListening = false;
+                    voiceBtn.classList.remove('text-red-400', 'bg-gray-700', 'animate-pulse');
+                    voiceBtn.classList.add('text-gray-300');
+                    userInput.placeholder = 'Type your message...';
+                }
+            } else {
+                // Hide voice button if browser doesn't support it
+                voiceBtn.style.display = 'none';
+                console.warn('Web Speech API not supported in this browser.');
+            }
+
+            // Initial focus
+            userInput.focus();
+        })();
+    </script>
 </body>
 </html>
